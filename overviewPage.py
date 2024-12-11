@@ -102,5 +102,6 @@ if st.session_state.isLoggedIn:
     overviewPage(information)
 else:
     st.text("Please log in to view the Class Visualization Page.")
+    st.switch_page("registerPage.py")
 
 
