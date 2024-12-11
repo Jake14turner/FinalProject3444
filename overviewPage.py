@@ -98,7 +98,7 @@ if st.session_state.isLoggedIn:
     if st.button("Refresh Grades"):
         refresh_grades()
     information = loadGradesFromDB(st.session_state.username)
-    else:
+
     overviewPage(information)
 else:
     st.text("Please log in to view the Class Visualization Page.")
