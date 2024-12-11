@@ -138,6 +138,7 @@ def loadGradesFromDB(username):
         SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'
     ''')
     if not cursor.fetchone():
+        st.text("Couldnt connect to db")
         return []
 
     cursor.execute(f'SELECT * FROM {table_name}')
@@ -153,6 +154,7 @@ def loadGradesFromDB(username):
             "score": row[2],
             "points_possible": row[3],
         })
+    st.text(grade_information)
 
     return grade_information
 
