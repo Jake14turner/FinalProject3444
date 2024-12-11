@@ -96,3 +96,4 @@ if st.session_state.isLoggedIn:
     toDoView()
 else:
     st.text("Please log in to view the To-Do page.")
+    st.switch_page("registerPage.py")
