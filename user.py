@@ -6,6 +6,24 @@ from datetime import datetime
 import time
 import pandas as pd
 import plotly.express as px
+import requests
+import streamlit as st
+import json
+from database import (
+    retreiveKey,
+    insertUserTokenIntoDatabase,
+    registerUser,
+    loginUser,
+    save_assignment,
+    create_assignments_table,
+)
+from datetime import datetime
+from notifications import send_email
+import time
+import threading
+import sqlite3
+
+
 
 class Assignment:
     def __init__(self, name, dueDate, pointsPossible):
@@ -25,6 +43,28 @@ class gradeGetter:
         self.classID = classID
         self.assignmentIDList = assignmentIDList
 
+# Retrieve user email
+def getUserEmail(username):
+    connection = sqlite3.connect("streamlitBase")
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT email FROM users WHERE username = ?", (username,))
+    result = cursor.fetchone()
+    connection.close()
+
+    if result:
+        return result[0]
+    return None
+
+
+
+# Store assignments in the database
+def store_assignments(data, user_id):
+    for course in data["courses"]:
+        for assignment in course["assignments"]:
+            assignment_name = assignment["name"]
+            due_date = assignment.get("due_date", None)
+            save_assignment(user_id, assignment_name, due_date)
 
 
 
@@ -318,20 +358,35 @@ def register():
 
         username = st.text_input("Please enter a username")
         password = st.text_input("Please choose a password", type="password")
+        email = st.text_input("Please enter your email")
         key = st.text_input("Please enter in a canvas access token")
 
         if st.button(words):
-            if username and password and key:
+            if username and password and email and key:
                 
 
                 #This is the responsibiliyt of the database component: We need to take the entered username and password, check if they are already taken, and if not they can create an account
-                success = registerUser(username, password, key)
+                success = registerUser(username, password, key, email)
                 if success:
                     st.success("User registered successfully!")
                     st.session_state.show_text = False
                     st.session_state.can_show_homepage = True
                     can = True
                     st.session_state.registered = True
+
+
+                     # Send a welcome email
+                    subject = "Welcome to the Assignment Tracker!"
+                    body = f"Hi {username},\n\nThank you for registering. You can now log in and start tracking your assignments.\n\nBest regards,\nAssignment Tracker Team"
+                    try:
+                        send_email(subject, body, email)
+                        st.success("A welcome email has been sent to your email address.")
+                    except Exception as e:
+                        st.warning(f"Registration successful, but failed to send the email: {e}")
+
+
+
+
                 else:
                     return
 
@@ -378,6 +433,145 @@ def login():
                 return False
         else:
             st.error("Please fill in both fields before submitting.")
+
+
+# Send daily reminders for assignments
+def send_daily_reminders():
+    """
+    Fetch assignments due today and send email reminders to the corresponding users.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    connection = sqlite3.connect("streamlitBase")
+    cursor = connection.cursor()
+
+    # Fetch assignments due today
+    query = '''
+        SELECT users.email, assignments.assignment_name, assignments.due_date
+        FROM assignments
+        JOIN users ON assignments.user_id = users.id
+        WHERE DATE(assignments.due_date) = ?
+    '''
+    cursor.execute(query, (today,))
+    results = cursor.fetchall()
+    connection.close()
+
+    # Send reminders for each assignment
+    for email, assignment_name, due_date in results:
+        subject = "Assignment Due Reminder"
+        body = f"Hi,\n\nThis is a reminder that your assignment '{assignment_name}' is due today ({due_date}).\n\nBest regards,\nAssignment Tracker Team"
+        try:
+            send_email(subject, body, email)
+            print(f"Reminder sent to {email} for assignment: {assignment_name}")
+        except Exception as e:
+            print(f"Failed to send reminder to {email}: {e}")
+
+
+# Start the reminder system
+def start_reminder_system():
+    """
+    Start a scheduled system to check for assignments due today and send reminders.
+    """
+    try:
+        print("Starting reminder system...")
+        while True:
+            send_daily_reminders()
+            # Sleep for 24 hours before running again
+            time.sleep(86400)
+    except KeyboardInterrupt:
+        print("Reminder system stopped.")
+
+
+# Run reminder system in a background thread
+def run_reminder_in_background():
+    """
+    Run the reminder system in a background thread.
+    """
+    thread = threading.Thread(target=start_reminder_system, daemon=True)
+    thread.start()
+
+
+def initialize_user_assignments(username):
+    """
+    Fetch assignments for the user from the Canvas API and store them in the database.
+    """
+    # Get the user's API key from the database
+    api_key = retreiveKey(username)
+    if not api_key:
+        st.error("No API key found for this user. Please register or update your key.")
+        return
+
+    # Fetch assignments using the `initializeUserInfoJSON` function
+    st.info("Fetching assignments from Canvas...")
+    user_data = st.session_state.data # Fetch courses and assignments
+
+    if not user_data or "courses" not in user_data:
+        st.error("Failed to fetch assignments. Please check your API key.")
+        return
+
+    # Save assignments to the database
+    st.info("Saving assignments to the database...")
+    for course in user_data["courses"]:
+        for assignment in course["assignments"]:
+            assignment_name = assignment["name"]
+            due_date = assignment.get("due_date")
+            if due_date:
+                try:
+                    save_assignment(
+                        user_id=st.session_state.username,
+                        assignment_name=assignment_name,
+                        due_date=due_date,
+                    )
+                except Exception as e:
+                    st.error(f"Error saving assignment '{assignment_name}': {e}")
+                    continue
+
+    st.success("Assignments have been initialized and stored in the database.")
+
+
+# Display user dashboard
+def display_user_dashboard(username):
+    """
+    Display the user's assignments on their dashboard.
+    """
+    st.title(f"Welcome, {username}!")
+    connection = sqlite3.connect("streamlitBase")
+    cursor = connection.cursor()
+
+    # Fetch assignments for the user
+    query = '''
+        SELECT assignments.assignment_name, assignments.due_date
+        FROM assignments
+        JOIN users ON assignments.user_id = users.id
+        WHERE users.username = ?
+        ORDER BY assignments.due_date
+    '''
+    cursor.execute(query, (username,))
+    assignments = cursor.fetchall()
+    connection.close()
+
+    # Display assignments
+    if assignments:
+        st.subheader("Your Upcoming Assignments:")
+        for assignment_name, due_date in assignments:
+            due_date_obj = datetime.fromisoformat(due_date)
+            formatted_date = due_date_obj.strftime("%Y-%m-%d %H:%M:%S")
+            st.write(f"- {assignment_name}: Due on {formatted_date}")
+    else:
+        st.info("No assignments found. Please fetch your Canvas assignments.")
+
+    # Option to fetch assignments
+    if st.button("Fetch Canvas Assignments"):
+        initialize_user_assignments(username)
+
+
+
+
+
+
+
+
+
+
 
 #####   this functinon is for a user to log out of their account   #####
 def logout():
