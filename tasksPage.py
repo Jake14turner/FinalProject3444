@@ -235,6 +235,7 @@ if st.session_state.isLoggedIn:
     tasksPageView()
 else:
     st.text("Please log in to view the Tasks page.")
+    st.switch_page("registerPage.py")
 
 
 
