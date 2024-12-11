@@ -93,14 +93,17 @@ if 'username' not in st.session_state:
 
     
 
-
 if st.session_state.isLoggedIn:
     showNavigationBar()
     if st.button("Refresh Grades"):
         refresh_grades()
     information = loadGradesFromDB(st.session_state.username)
-
+    if information:
+        st.text("IT loaded")
+    else:
+        st.text("IT did not load")
     overviewPage(information)
 else:
     st.text("Please log in to view the Class Visualization Page.")
+
 
