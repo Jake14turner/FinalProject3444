@@ -28,24 +28,100 @@ def insertUserTokenIntoDatabase(token, username):
     testToken = connect.fetchone()
     return testToken[0]
 
-def registerUser(username, password, key):
+def create_assignments_table():
+    connection = sqlite3.connect('streamlitBase')
+    cursor = connection.cursor()
+
+    # Create the assignments table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            assignment_name TEXT,
+            due_date TEXT,
+            course_id INTEGER,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+    ''')
+    connection.commit()
+    connection.close()
+def save_assignment(user_id, assignment_name, due_date, course_id=None):
+    connection = sqlite3.connect('streamlitBase')
+    cursor = connection.cursor()
+
+    # Insert assignment into the table
+    cursor.execute('''
+        INSERT INTO assignments (user_id, assignment_name, due_date, course_id)
+        VALUES (?, ?, ?, ?)
+    ''', (user_id, assignment_name, due_date, course_id))
+
+    connection.commit()
+    connection.close()
+
+
+def get_user_assignments(user_id):
+    connection = sqlite3.connect('streamlitBase')
+    cursor = connection.cursor()
+
+    # Fetch all assignments for the user
+    cursor.execute('''
+        SELECT assignment_name, due_date, course_id
+        FROM assignments
+        WHERE user_id = ?
+    ''', (user_id,))
+    results = cursor.fetchall()
+    connection.close()
+
+    # Convert results to a list of dictionaries
+    return [{"name": row[0], "due_date": row[1], "course_id": row[2]} for row in results]
+
+
+
+
+
+
+
+
+
+def registerUser(username, password, key, email):
        
     connection = sqlite3.connect('streamlitBase')
     connect = connection.cursor()
 
 
     #create the database if there are no users yet
-    connect.execute('''CREATE TABLE IF NOT EXISTS users
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, key TEXT, assignment_estimates TEXT, DaysAvailableToWork TEXT)''')
+    connect.execute('''                   
+                    CREATE TABLE IF NOT EXISTS users
+                    (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, key TEXT, email TEXT UNIQUE,assignment_estimates TEXT, DaysAvailableToWork TEXT)''')
     connection.commit()
 
     try:
-        connect.execute("INSERT INTO users (username, password, key) VALUES (?, ?, ?)", (username, password, key))
+        connect.execute("INSERT INTO users (username, password, key, email) VALUES (?, ?, ?, ?)", (username, password, key,email))
         connection.commit()
         return True
     except sqlite3.IntegrityError:
         st.error("username already exists please try another one")
         return False
+    finally:
+        connection.close()
+
+
+def getUserEmail(username):
+    connection = sqlite3.connect('streamlitBase')
+    cursor = connection.cursor()
+
+    cursor.execute("SELECT email FROM users WHERE username = ?", (username,))
+    result = cursor.fetchone()
+    connection.close()
+
+    if result:
+        return result[0]
+    return None
+
+
+
+
+
 
 def loginUser(username, password):
 
